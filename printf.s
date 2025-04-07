@@ -1,5 +1,5 @@
+section .note.GNU-stack noalloc noexec nowrite progbits
 section .data
-
 ; Constants for syscalls and buffer management
 WRITE_FUNC      equ 0x1
 PRINT_NUMBER    equ 0x1
@@ -107,23 +107,11 @@ Alphabet:
 Buffer:
     db BUFFER_LEN dup (0)
 
-;--------------------------------------------
-
 section .text
 
 global MyPrintf
 
-;--------------------------------------------
-; Function pushes all parameters to stack
-; and saves pointer to string in RDI
-;
-; Entry: RDI, RSI, RDX, RCX, R8, R9, STACK
-; Exit:  Stdout
-; Dest:  RAX
-;--------------------------------------------
-
 MyPrintf:
-
     pop rax  ; Save return address
 
     push r9  ; Push parameters
@@ -151,7 +139,7 @@ MyPrintf:
     jmp MyPrintfReal  ; Start real Printf
 
 ExitFunction:
-    add rsp, STACK_ELEM_SIZE * 2
+    add rsp, STACK_ELEM_SIZE * 3
     mov rsp, rbp
 
     pop rbp
@@ -162,23 +150,10 @@ ExitFunction:
 
     ret
 
-;--------------------------------------------
-
-;--------------------------------------------
-; Function prints the string with parameters
-; pointed by R8
-;
-; Entry: RSI, R8
-; Exit:  Stdout, RAX
-; Dest:  RCX, RDX, RSI, RDI, R8, R9, R11
-;--------------------------------------------
-
 MyPrintfReal:
     xor rcx, rcx
 
     START_INDEXING_FLOAT_ARGUMENTS
-
-;---------------------------------
 
 .Conditional:
     cmp byte [rsi], END_SYMBOL
@@ -200,8 +175,6 @@ MyPrintfReal:
     inc rsi  ; RSI points to the next symbol in the string
     jmp .Conditional
 
-;---------------------------------
-
 .Done:
     cmp rcx, 0x0
     jne .LastPrintBuffer
@@ -209,7 +182,7 @@ MyPrintfReal:
 .MovDoneResult:
     mov rax, DONE_RESULT
 
-.StopPrint:
+.Exit:
     jmp ExitFunction
 
 .LastPrintBuffer:
@@ -218,38 +191,32 @@ MyPrintfReal:
     pop rsi
     jmp .MovDoneResult
 
-;---------------------------------
-
 .BufferEnd:
     call PrintBuffer
     jmp .Continue
-
-;---------------------------------
 
 .PrintArgument:
     inc rsi
 
     cmp byte [rsi], ARG_SYMBOL
     je .PrintChar
-    xor rax, rax
-    mov al, byte [rsi]
+    
+    movzx r14, byte [rsi]      ; Use r14 for temp storage
     inc rsi
-    sub rax, JUMP_TABLE_FIRST_SYM  ; RAX is the index in JumpTable
+    cmp r14, 'b'
+    jb .InvalidArgument
+    cmp r14, 'x'
+    ja .InvalidArgument
 
-    shl rax, QWORD_LEN
-
-    add rax, .JumpTable
-    mov rax, [rax]
-    jmp rax
-
-;---------------------------------
+    ; Optimize with LEA
+    lea r15, [.JumpTable]      ; r15 = table base
+    movzx rax, r14b
+    sub rax, JUMP_TABLE_FIRST_SYM
+    jmp [r15 + rax*8]
 
 .InvalidArgument:
-
     mov rax, INVALID_SPECIFIER
-    jmp .StopPrint
-
-;-----------------
+    jmp ExitFunction
 
 .ArgB:
 
