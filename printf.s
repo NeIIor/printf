@@ -21,12 +21,8 @@ DONE_RESULT       equ 0x0
 INVALID_SPECIFIER equ 0x1
 SYSCALL_ERROR     equ 0x2
 
-ADDRESS_LEN_POW_2 equ 0x3
 STACK_ELEM_SIZE   equ 0x8
 QWORD_LEN         equ 0x3
-
-SIGN_MASK dq 0xA000000000000000  ; First bit is 1, others are 0
-MINUS     equ '-'
 
 REGISTER_SIZE equ 64
 INT_SIZE      equ 32
@@ -49,12 +45,8 @@ DOUBLE_SIZE   equ 64
 FLAG_START_NUMBER equ 0x1
 FLAG_END_NUMBER   equ 0x0
 
-FIRST_DEGREE  equ 0x1
 THIRD_DEGREE  equ 0x3
 FOURTH_DEGREE equ 0x4
-
-TEN  equ 0xA
-FIVE equ 0x5
 
 EAX_PATTERN equ 0x00000000FFFFFFFF
 
@@ -106,6 +98,9 @@ Alphabet:
 
 Buffer:
     db BUFFER_LEN dup (0)
+
+SaveZoneAfterBuffer:
+    db 0xFF dup (0)
 
 section .text
 
@@ -223,7 +218,7 @@ MyPrintfReal:
     GOT_ARGUMENT_TO_RAX
 
     push rsi
-    mov rsi, FIRST_DEGREE  ; RSI - power of 2 in the counting system
+    mov rsi, 0x1  ; RSI - power of 2 in the counting system
     call ValToStrPowTwo
     pop rsi
 
@@ -491,14 +486,14 @@ PrintArgD:
 
     push rcx
     mov rcx, REGISTER_SIZE
-    shr rcx, 1  ; CL = REGISTER_SIZE / 4
+    shr rcx, 1  ; CL = REGISTER_SIZE / 2
     shl rax, cl
     shr rax, cl  ; Prepare DX and AX for division
     pop rcx
 
     mov rbx, INT_SIZE
     call CheckSign
-    mov ebx, TEN
+    mov ebx, 0xA
 
     xor rdx, rdx
 
@@ -590,10 +585,8 @@ PrintArgF:
 
     ; Printed number = RBX * 2 ^ (-RCX)
     ; Printed number = RBX * 5 ^ (RCX) * 10 ^ (-RCX)
-    cmp rcx, [SIGN_MASK]
-    ja .NegRCX
-    je .ZeroRCX
     cmp rcx, 0x0
+    jl .NegRCX
     je .ZeroRCX
 
     push rax
@@ -621,7 +614,7 @@ PrintArgF:
 
     push rcx
 .For:
-    imul rbx, FIVE  ; 5 = 10 / 2
+    imul rbx, 0x5  ; 5 = 10 / 2
     loop .For
     pop rcx
 
@@ -726,7 +719,7 @@ CheckSpecialFloatMeaning:
     jae .BufferEndMinusNAN
 
 .ContinueMinusNAN:
-    mov byte [Buffer + rcx], MINUS  ; [Buffer + RCX] = '-'
+    mov byte [Buffer + rcx], '-'  
     mov ax, word [NAN]
     mov word [Buffer + 1 + rcx], ax  ; [Buffer + RCX] = '-na'
     mov al, byte [NAN + 2]
@@ -769,7 +762,7 @@ CheckSpecialFloatMeaning:
     jae .BufferEndMinusINF
 
 .ContinueMinusINF:
-    mov byte [Buffer + rcx], MINUS  ; [Buffer + RCX] = '-'
+    mov byte [Buffer + rcx], '-' ; [Buffer + RCX] = '-'
     mov ax, word [INF]
     mov word [Buffer + 1 + rcx], ax  ; [Buffer + RCX] = '-in'
     mov al, byte [INF + 2]
@@ -803,7 +796,7 @@ PrintNumber:
 
     mov rdi, rbx
 
-    mov rbx, TEN
+    mov rbx, 0xA
 
     xor rdx, rdx
 
@@ -941,7 +934,7 @@ CheckSign:
 .Continue:
     pop rax
     neg rax
-    mov byte [Buffer + rcx],  MINUS
+    mov byte [Buffer + rcx],  '-'
     inc rcx
     mov rdx, FLAG_MINUS
     jmp .Done
@@ -981,7 +974,7 @@ ValToStrPowTwo:
 
 .While:
     push rcx
-    mov rcx, rdx
+    mov rcx, rdx ; shr/shl rax, r15/r14/... is not working
     shl rax, cl
     mov rcx, rbx
     add rcx, rdx
@@ -1063,7 +1056,7 @@ ValToStrOct:
 ; Translates number from AL to
 ; string
 ;
-; Entry:  RAX, RDI
+; Entry:  RAX, RDI, RCX
 ; Exit:   Buffer
 ; Destrs: RAX, RDI
 ;---------------------------------
@@ -1078,7 +1071,7 @@ DigitToStr:
     je .SkipZeroes
 
 .DontSkip:
-    mov al, byte [Alphabet + rax]
+    mov al, byte [Alphabet + rax]; 2 more strs for lodsb stosb
     mov byte [Buffer + rcx], al
     inc rcx
 
